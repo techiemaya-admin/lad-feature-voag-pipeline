@@ -1,8 +1,8 @@
 """
 Database storage for call recordings and transcriptions.
 
-Updated for lad_dev schema (Phase 12):
-- Table: lad_dev.voice_call_logs
+Updated for dynamic schema (Phase 12):
+- Table: SCHEMA.voice_call_logs
 - Column renames: target→lead_id, agent→agent_id, voice→voice_id
 - transcriptions→transcripts, call_recording_url→recording_url
 - call_duration→duration_seconds, call_type→direction
@@ -25,7 +25,7 @@ from db.connection_pool import get_db_connection, return_connection, USE_CONNECT
 # Import centralized DB config (respects USE_LOCAL_DB toggle)
 from db.db_config import get_db_config, validate_db_config
 # Import schema constants for configurable schema name
-from db.schema_constants import SCHEMA, CALL_LOGS_FULL
+from db.schema_constants import SCHEMA, CALL_LOGS_FULL, BILLING_PRICING_CATALOG_FULL
 
 load_dotenv()
 
@@ -151,7 +151,7 @@ class CallStorage:
     """
     Handles database operations for call recordings and transcriptions.
     
-    Uses lad_dev.voice_call_logs schema with:
+    Uses dynamic voice_call_logs schema with:
     - tenant_id (required) - multi-tenancy isolation
     - lead_id (UUID FK) - replaces old target/target_type
     - metadata (JSONB) - for job_id, room_name, added_context
@@ -275,7 +275,7 @@ class CallStorage:
                 room_name=room_name,
                 added_context=added_context,
             )
-            # Store voice_id in metadata (column doesn't exist in lad_dev.voice_call_logs)
+            # Store voice_id in metadata (column doesn't exist in voice_call_logs)
             if voice_id:
                 metadata["voice_id"] = voice_id
             
@@ -873,11 +873,11 @@ class CallStorage:
         try:
             with self._get_connection() as conn:
                 with conn.cursor() as cur:
-                    # Use lad_dev.billing_pricing_catalog table
+                    # Use billing_pricing_catalog table
                     # Column mappings: category = component, unit_price = cost_per_unit
-                    cur.execute("""
+                    cur.execute(f"""
                         SELECT category, provider, model, unit, unit_price
-                        FROM lad_dev.billing_pricing_catalog
+                        FROM {BILLING_PRICING_CATALOG_FULL}
                         WHERE is_active = TRUE
                     """)
                     

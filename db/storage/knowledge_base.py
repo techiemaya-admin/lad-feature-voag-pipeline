@@ -30,7 +30,7 @@ class KnowledgeBaseStorage:
     """
     Database storage for knowledge base (File Search) stores.
     
-    Uses the lad_dev.knowledge_base_catalog table which associates KB stores
+    Uses the knowledge_base_catalog table which associates KB stores
     with tenants rather than individual agents/leads.
     """
 
@@ -355,7 +355,7 @@ class KnowledgeBaseStorage:
     # =========================================================================
     # TENANT-BASED STORE RESOLUTION (New Schema)
     # =========================================================================
-    # Note: The new lad_dev.knowledge_base_catalog schema uses tenant_id
+    # Note: The new knowledge_base_catalog schema uses tenant_id
     # instead of agent/lead linking tables. Stores are associated directly
     # with tenants. The old agent/lead linking methods are deprecated.
 

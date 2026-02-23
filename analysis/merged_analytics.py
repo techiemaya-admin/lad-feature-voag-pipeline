@@ -2559,7 +2559,7 @@ CONFIDENCE: [High/Medium/Low]"""
         db_config: Dict,
     ) -> bool:
         """
-        Legacy method for backward compatibility - calls save_to_lad_dev
+        Legacy method for backward compatibility - calls save_to_db
         
         Args:
             analysis: The complete analytics dictionary
@@ -2569,15 +2569,15 @@ CONFIDENCE: [High/Medium/Low]"""
         Returns:
             bool: True if saved successfully
         """
-        # Extract tenant_id from analysis for lad_dev save
+        # Extract tenant_id from analysis for database save
         tenant_id = analysis.get("tenant_id")
         if not tenant_id:
-            logger.warning("No tenant_id found in analysis - cannot save to lad_dev")
+            logger.warning("No tenant_id found in analysis - cannot save to database")
             return False
             
-        return await self.save_to_lad_dev(analysis, call_log_id, tenant_id)
+        return await self.save_to_db(analysis, call_log_id, tenant_id)
     
-    async def save_to_lad_dev(
+    async def save_to_db(
         self,
         analysis: Dict,
         call_log_id: str,
@@ -2595,7 +2595,7 @@ CONFIDENCE: [High/Medium/Low]"""
             bool: True if saved successfully
         """
         if not STORAGE_CLASSES_AVAILABLE:
-            logger.error("DB config helpers not available - cannot save to lad_dev")
+            logger.error("DB config helpers not available - cannot save to database")
             return False
 
         try:
@@ -3422,7 +3422,7 @@ class StandaloneAnalytics:
                 # Save to database
                 if tenant_id and STORAGE_CLASSES_AVAILABLE:
                     logger.info("Saving analytics to {SCHEMA}.voice_call_analysis table...")
-                    success = await self.analytics.save_to_lad_dev(result, str(db_call_id), str(tenant_id))
+                    success = await self.analytics.save_to_db(result, str(db_call_id), str(tenant_id))
                     # Use the same db_config for leads update
                     from db.db_config import get_db_config
                     leads_db_config = get_db_config()

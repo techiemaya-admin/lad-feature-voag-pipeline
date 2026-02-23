@@ -2,7 +2,7 @@
 Call Report Service - Standalone Service for Single and Bulk Call Reports
 Handles both single call reports and bulk call reports based on batch_id
 
-Phase 13: Updated to use lad_dev schema (no longer uses voice_agent)
+Phase 13: Updated to use dynamic schema (no longer uses voice_agent)
 """
 
 import os
@@ -28,6 +28,7 @@ from db.schema_constants import (
     ANALYSIS_FULL,
     LEADS_FULL,
     BATCHES_FULL,
+    BATCH_ENTRIES_FULL,
 )
 
 load_dotenv()
@@ -84,7 +85,7 @@ def get_email_recipients(env_key: str = "REPORT_EMAIL") -> List[str]:
 
 def fetch_single_call_data(call_log_id) -> Optional[Dict]:
     """
-    Fetch single call analysis data from database (lad_dev schema)
+    Fetch single call analysis data from database
     
     Args:
         call_log_id: Call log ID (UUID string or integer row number)
@@ -204,7 +205,7 @@ def check_batch_id_exists(batch_id: str) -> Dict:
             # Batch doesn't exist - check entries table
             cursor.execute(f"""
                 SELECT COUNT(*) as total_calls
-                FROM lad_dev.voice_call_batch_entries
+                FROM {BATCH_ENTRIES_FULL}
                 WHERE batch_id = %s::uuid
             """, (str(batch_id),))
             total_calls = cursor.fetchone()[0]
@@ -218,7 +219,7 @@ def check_batch_id_exists(batch_id: str) -> Dict:
         # Check calls with analysis
         cursor.execute(f"""
             SELECT COUNT(DISTINCT be.call_log_id) as calls_with_analysis
-            FROM lad_dev.voice_call_batch_entries be
+            FROM {BATCH_ENTRIES_FULL} be
             INNER JOIN {ANALYSIS_FULL} a ON be.call_log_id = a.call_log_id
             WHERE be.batch_id = %s::uuid
         """, (str(batch_id),))
@@ -238,7 +239,7 @@ def check_batch_id_exists(batch_id: str) -> Dict:
 
 def fetch_bulk_call_data_by_batch_id(batch_id) -> List[Dict]:
     """
-    Fetch all calls for a specific batch_id from database (lad_dev schema)
+    Fetch all calls for a specific batch_id from database
     
     Args:
         batch_id: Batch ID (UUID) from voice_call_batches table
@@ -266,7 +267,7 @@ def fetch_bulk_call_data_by_batch_id(batch_id) -> List[Dict]:
             FROM {ANALYSIS_FULL} a
             INNER JOIN {CALL_LOGS_FULL} cl ON a.call_log_id = cl.id
             LEFT JOIN {LEADS_FULL} l ON cl.lead_id = l.id
-            INNER JOIN lad_dev.voice_call_batch_entries be ON be.call_log_id = cl.id
+            INNER JOIN {BATCH_ENTRIES_FULL} be ON be.call_log_id = cl.id
             WHERE be.batch_id = %s::uuid
             ORDER BY cl.started_at ASC
         """
@@ -824,7 +825,7 @@ def list_all_batch_ids() -> None:
                 b.created_at as first_call,
                 b.updated_at as last_call
             FROM {BATCHES_FULL} b
-            LEFT JOIN lad_dev.voice_call_batch_entries be ON be.batch_id = b.id
+            LEFT JOIN {BATCH_ENTRIES_FULL} be ON be.batch_id = b.id
             LEFT JOIN {ANALYSIS_FULL} a ON be.call_log_id = a.call_log_id
             GROUP BY b.id, b.total_calls, b.created_at, b.updated_at
             ORDER BY b.created_at DESC

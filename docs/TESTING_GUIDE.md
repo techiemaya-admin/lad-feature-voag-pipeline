@@ -94,6 +94,11 @@ export USER_ID="fe9d6368-ff1b-4133-952a-525d60d06cbe"
 export USER_ID="c1cfc12e-3185-476b-9e90-930e402dd93a"
 ####this is mine SAHIL  , my google and microsoft id are attached already , change this to your user id
 export USER_ID="9ef0f23e-1129-49d4-a79f-4b3f13225f48"
+
+
+# stage
+export USER_ID="20bc2e61-cd1a-4801-87b6-2e125303474f"
+export USER_ID="b838f172-4046-40fa-83bd-26adda05988d"
 # Common headers
 export HEADERS="-H 'Content-Type: application/json' -H 'X-Frontend-ID: $FRONTEND_ID' -H 'X-API-Key: $API_KEY'"
 ```
@@ -111,11 +116,11 @@ curl -X POST "$BASE_URL/calls/start-call" \
   -H "X-API-Key: $API_KEY" \
   -d '{
     "voice_id": "default",
-    "to_number": "+918384884150",
-    "from_number": "+19513456728",
+    "to_number": "+971506341191",
+    "from_number": "+971545335200",
     "added_context": "This is a test call",
-    "initiated_by": '"$USER_ID"',
-    "agent_id": 7,
+    "initiated_by": "'"$USER_ID"'",
+    "agent_id": 33,
     "lead_name": "Sahil"
   }'
 ```

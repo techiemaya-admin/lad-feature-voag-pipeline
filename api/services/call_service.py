@@ -21,6 +21,7 @@ from utils.call_routing import validate_and_format_call
 from utils.tenant_utils import is_education_tenant
 from utils.livekit_resolver import resolve_livekit_credentials
 from db.db_config import get_db_config
+from db.schema_constants import STUDENTS_FULL
 
 logger = logging.getLogger(__name__)
 
@@ -555,6 +556,7 @@ class CallService:
         lead_id_override: str | None = None,  # UUID
         batch_id: str | None = None,  # Batch call tracking
         entry_id: str | None = None,  # Batch entry tracking
+        worker_name_override: str | None = None,  # Override worker name (test batches)
     ) -> DispatchResult:
         """
         Dispatch a single outbound call via LiveKit.
@@ -610,7 +612,7 @@ class CallService:
                                         intake_year,
                                         intake_month,
                                         metadata
-                                    FROM lad_dev.education_students
+                                    FROM {STUDENTS_FULL}
                                     WHERE lead_id = %s::uuid
                                     LIMIT 1
                                 """, (lead_uuid,))
@@ -799,7 +801,7 @@ class CallService:
             participant_metadata = json.dumps(metadata)
             
             # Use worker_name from credentials (database or environment)
-            agent_name = livekit_creds.worker_name or os.getenv("VOICE_AGENT_NAME", "inbound-agent")
+            agent_name = worker_name_override or livekit_creds.worker_name or os.getenv("VOICE_AGENT_NAME", "inbound-agent")
             
             # Create agent dispatch
             dispatch_result = await livekit_api.agent_dispatch.create_dispatch(

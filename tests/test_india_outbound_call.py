@@ -47,7 +47,7 @@ async def test_india_outbound_call():
     print("="*80)
     
     # Configuration
-    from_number = "+919513456728"  # India number with livekit_config UUID
+    from_number = "+19513456728"  # India number with livekit_config UUID
     to_number = "+918384884150"  # Test number in India
     agent_id = 33
     tenant_id = "e0a3e9ca-3f46-4bb0-ac10-a91b5c1d20b5"  # Specific tenant for this test

@@ -2,7 +2,7 @@
 Tool Audit Trail Module.
 
 Tracks all tool calls, responses, and async events during a call.
-Stored as nested JSON in metadata column of lad_dev.voice_call_logs.
+Stored as nested JSON in metadata column of voice_call_logs.
 
 Events logged:
 - Tools provided to LLM

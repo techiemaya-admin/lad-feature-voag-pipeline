@@ -169,7 +169,7 @@ if __name__ == "__main__":
     
     logging.getLogger("uvicorn.access").addFilter(_HealthCheckFilter())
     
-    port = int(os.getenv("PORT", "8000"))
+    port = int(os.getenv("PORT", "8020"))
     workers = int(os.getenv("UVICORN_WORKERS", "1"))
     
     uvicorn.run(

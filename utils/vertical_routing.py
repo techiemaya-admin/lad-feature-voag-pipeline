@@ -6,13 +6,13 @@ Vertical Routing Module
 Routes extracted lead data to vertical-specific tables based on tenant slug.
 
 Vertical Detection:
-- Reads tenant slug from lad_dev.tenants
+- Reads tenant slug from tenants table
 - Parses slug format: "{vertical}_{client}" or "{vertical}-{client}"
 - Routes to appropriate extractor/storage
 
 Supported Verticals:
-- education: Stores in lad_dev.education_students (uses analysis.lad_dev.StudentExtractor)
-- realestate: (future) lad_dev.realestate_leads  
+- education: Stores in education_students (uses analysis.lad_dev.StudentExtractor)
+- realestate: (future) realestate_leads  
 - general: Only stores in voice_call_analysis.lead_extraction
 
 Usage:
@@ -34,6 +34,8 @@ import logging
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+from db.schema_constants import SCHEMA, STUDENTS_FULL, CALL_ANALYSIS_FULL
 
 # Import vertical detection
 try:
@@ -301,7 +303,7 @@ async def _route_education_vertical(
             return VerticalRoutingResult(
                 vertical="education",
                 routed=True,
-                target_table="lad_dev.education_students",
+                target_table=STUDENTS_FULL,
                 extracted_data=student_info
             )
         else:
@@ -510,7 +512,7 @@ CRITICAL: Only extract information PROVIDED BY THE LEAD/USER, NOT the agent/bot.
                 return VerticalRoutingResult(
                     vertical="general",
                     routed=True,
-                    target_table="lad_dev.voice_call_analysis",
+                    target_table=CALL_ANALYSIS_FULL,
                     extracted_data=cleaned_info
                 )
         

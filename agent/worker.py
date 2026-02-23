@@ -23,6 +23,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Sequence
@@ -137,6 +138,13 @@ AGENT_VERSION = os.getenv("AGENT_VERSION", "2.0.0")
 _MAX_CONCURRENT_CALLS = int(os.getenv("MAX_CONCURRENT_CALLS", "1"))
 _call_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_CALLS)
 
+# Atomic counter for immediate load reporting (fixes race condition where
+# LiveKit dispatches multiple jobs before worker.active_jobs updates).
+# threading.Lock is used because load_fnc may be called from any thread;
+# the lock is uncontended in practice so overhead is negligible.
+_active_count = 0
+_count_lock = threading.Lock()
+
 
 # =============================================================================
 # WORKER LOAD MANAGEMENT
@@ -147,12 +155,16 @@ def calculate_worker_load(worker: Any) -> float:
     Calculate worker load to control job distribution.
     
     Returns a value between 0.0 and 1.0 based on active jobs vs max capacity.
-    When load >= 1.0, the worker rejects new jobs.
+    When load >= 1.0, the worker stops receiving new jobs from LiveKit.
+    
+    Uses _active_count (incremented immediately on entrypoint entry) instead
+    of len(worker.active_jobs) which has a stale window during burst dispatch.
     """
-    active_jobs = len(worker.active_jobs) if hasattr(worker, 'active_jobs') else 0
+    with _count_lock:
+        count = _active_count
     if _MAX_CONCURRENT_CALLS <= 0:
-        return 1.0 if active_jobs > 0 else 0.0
-    return active_jobs / _MAX_CONCURRENT_CALLS
+        return 1.0 if count > 0 else 0.0
+    return min(count / _MAX_CONCURRENT_CALLS, 1.0)
 
 
 # =============================================================================
@@ -597,7 +609,14 @@ async def entrypoint(ctx: agents.JobContext):
     """
     logger.info(f"Agent v{AGENT_VERSION} starting job {getattr(ctx.job, 'id', 'unknown')}")
     
-    # Acquire call slot
+    # Immediately mark this slot as taken so load_fnc reports full to LiveKit.
+    # This closes the race window where burst dispatches all see load=0.0.
+    global _active_count
+    with _count_lock:
+        _active_count += 1
+        logger.info("Concurrency slot claimed: %d/%d active", _active_count, _MAX_CONCURRENT_CALLS)
+    
+    # Acquire call slot (safety net — should never block if load_fnc works)
     await _call_semaphore.acquire()
     acquired_call_slot = True
     
@@ -711,6 +730,36 @@ async def entrypoint(ctx: agents.JobContext):
             "job_id=%s, call_mode=%s, agent_id=%s, raw_metadata=%s",
             job_id, call_mode, agent_id, ctx.job.metadata[:200] if ctx.job.metadata else None
         )
+    
+    # =========================================================================
+    # EARLY BATCH CANCELLATION CHECK
+    # If this call belongs to a cancelled batch, skip it entirely.
+    # This handles the case where all calls were dispatched to LiveKit Cloud
+    # before the cancel request was processed — the worker checks DB before
+    # connecting to the room and making the actual call.
+    # =========================================================================
+    if batch_id and call_log_id:
+        from db.storage.batches import BatchStorage
+        batch_storage_check = BatchStorage()
+        is_cancelled = await batch_storage_check.is_batch_stopped(batch_id)
+        if is_cancelled:
+            logger.info(
+                "Batch %s is cancelled — skipping call %s (job=%s)",
+                batch_id, call_log_id, job_id
+            )
+            # Update call status so it's not stuck as "in_queue"
+            await call_storage.update_call_metadata(call_log_id, status="cancelled")
+            # Update batch entry status if entry_id is available
+            if entry_id:
+                await batch_storage_check.update_batch_entry_status(entry_id, "cancelled")
+                await batch_storage_check.increment_batch_counters(batch_id, cancelled_delta=1)
+            # Release call slot and exit
+            _call_semaphore.release()
+            with _count_lock:
+                _active_count = max(_active_count - 1, 0)
+                logger.info("Concurrency slot released (batch cancel): %d/%d active", _active_count, _MAX_CONCURRENT_CALLS)
+            ctx.shutdown()
+            return
     
     # Connect to room
     await ctx.connect()
@@ -1383,6 +1432,9 @@ async def entrypoint(ctx: agents.JobContext):
     finally:
         if acquired_call_slot:
             _call_semaphore.release()
+            with _count_lock:
+                _active_count = max(_active_count - 1, 0)
+                logger.info("Concurrency slot released (call end): %d/%d active", _active_count, _MAX_CONCURRENT_CALLS)
 
 
 # =============================================================================

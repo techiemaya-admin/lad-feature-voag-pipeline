@@ -42,6 +42,7 @@ from api.services.call_service import (
 from db.storage import BatchStorage, VoiceStorage
 from db.connection_pool import get_db_connection
 from db.db_config import get_db_config
+from db.schema_constants import USERS_FULL
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ async def _resolve_tenant_id_from_user(user_id: str | None) -> str | None:
         with get_db_connection(get_db_config()) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT primary_tenant_id FROM lad_dev.users WHERE id = %s",
+                    f"SELECT primary_tenant_id FROM {USERS_FULL} WHERE id = %s",
                     (user_id,)
                 )
                 result = cur.fetchone()

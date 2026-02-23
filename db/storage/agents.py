@@ -1,8 +1,8 @@
 """
 Agent metadata storage helpers.
 
-Updated for lad_dev schema (Phase 12):
-- Table: lad_dev.voice_agents (was agents_voiceagent)
+Updated for dynamic schema (Phase 12):
+- Table: SCHEMA.voice_agents (was agents_voiceagent)
 - Added: tenant_id for multi-tenancy
 - Uses voice_permissions for org lookup (was org_permissions_voiceagent)
 """
@@ -35,7 +35,7 @@ class AgentStorage:
     """
     Provides read access to agent prompt configuration.
     
-    Uses lad_dev.voice_agents schema with:
+    Uses voice_agents schema with:
     - tenant_id for multi-tenancy filtering
     - voice_permissions for organization lookup
     """
@@ -154,7 +154,7 @@ class AgentStorage:
         Returns:
             The organization/tenant UUID as a string, or None if not found
         """
-        # In lad_dev schema, org_id is now tenant_id
+        # In new schema, org_id is now tenant_id
         return await self.get_agent_tenant_id(agent_id)
 
     async def is_education_agent(self, agent_id: Any) -> bool:

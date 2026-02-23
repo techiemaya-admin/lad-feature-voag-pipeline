@@ -2,7 +2,7 @@
 Call Analysis storage helpers.
 
 Phase 13: Post-Call Analysis Refactor
-- Table: lad_dev.voice_call_analysis
+- Table: SCHEMA.voice_call_analysis
 - 1:1 relationship with voice_call_logs via call_log_id
 """
 
@@ -33,7 +33,7 @@ class CallAnalysisStorage:
     """
     Handles database operations for call analysis records.
     
-    Uses lad_dev.voice_call_analysis schema with:
+    Uses voice_call_analysis schema with:
     - tenant_id for multi-tenancy isolation
     - call_log_id as FK to voice_call_logs
     - summary, sentiment, key_points, lead_extraction

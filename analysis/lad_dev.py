@@ -40,7 +40,7 @@ load_dotenv()
 LOG_DIR = Path(__file__).parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
-LOG_FILE = LOG_DIR / f"lad_dev_{datetime.now().strftime('%Y%m%d')}.log"
+LOG_FILE = LOG_DIR / f"{SCHEMA}_{datetime.now().strftime('%Y%m%d')}.log"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -384,7 +384,7 @@ CRITICAL EXTRACTION RULES:
             # Generate filename
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             call_id_short = str(call_log_id)[:8] if call_log_id else 'unknown'
-            filename = f"lad_dev_{call_id_short}_{timestamp}.json"
+            filename = f"{SCHEMA}_{call_id_short}_{timestamp}.json"
             
             # Create json_exports directory if it doesn't exist
             json_dir = Path(__file__).parent / "json_exports"

@@ -1,6 +1,6 @@
 """Utility helpers for reading/writing OAuth tokens via user_identities table.
 
-Updated for lad_dev schema where tokens are stored in user_identities table,
+Updated for dynamic schema where tokens are stored in user_identities table,
 not directly on the users table.
 """
 
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 class UserTokenStorage:
-    """Provides access to OAuth tokens via lad_dev.user_identities table."""
+    """Provides access to OAuth tokens via user_identities table."""
 
     def __init__(self) -> None:
         self.db_config = {
@@ -55,7 +55,7 @@ class UserTokenStorage:
     # =========================================================================
 
     async def get_user_by_user_id(self, user_id: str) -> Optional[dict[str, Any]]:
-        """Get user record by UUID from lad_dev.users."""
+        """Get user record by UUID from users table."""
         # Validate user_id - reject None, empty, or string 'None'/'null'
         if not user_id or str(user_id).strip().lower() in ('none', 'null', ''):
             return None

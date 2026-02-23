@@ -78,7 +78,7 @@ class MicrosoftCredentialResolver:
         if not record:
             raise MicrosoftCredentialError(f"User {clean} not found", status_code=404)
         
-        # lad_dev.users uses 'id' as the primary key (UUID)
+        # users table uses 'id' as the primary key (UUID)
         canonical = str(record.get("id") or "").strip()
         if not canonical:
             raise MicrosoftCredentialError(

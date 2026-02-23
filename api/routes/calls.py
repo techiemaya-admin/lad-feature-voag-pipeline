@@ -25,6 +25,7 @@ from api.models import (
     BatchEntryStatusModel,
     CancelRequest,
     CancelResponse,
+    CancelResultItem,
     SingleCallPayload,
     CallAttemptModel,
     JobStatus,
@@ -263,176 +264,211 @@ async def get_call_or_batch_status(resource_id: str) -> CallStatusResponse | Bat
 
 
 # =============================================================================
-# POST /calls/cancel - Cancel call or stop batch
+# POST /calls/cancel - Cancel call(s) or stop batch(es)
 # =============================================================================
 
-@router.post("/cancel", response_model=CancelResponse)
-async def cancel_call_or_batch(request: CancelRequest) -> CancelResponse:
-    """
-    Cancel a running call or stop a batch.
-    
-    For individual calls:
-    - Terminates the active call
-    - Updates call status to 'cancelled'
-    - Performs proper cleanup
-    
-    For batches:
-    - Marks batch as 'stopped'
-    - Cancels all pending entries
-    - Active calls are allowed to complete
-    - Updates status of cancelled entries
-    
-    Args:
-        request: CancelRequest with resource_id
-    
-    Returns:
-        CancelResponse with action details
-    """
-    resource_id = request.resource_id.strip()
-    call_storage = _get_call_storage()
-    batch_storage = _get_batch_storage()
-    
+async def _cancel_single_resource(
+    resource_id: str, force: bool,
+    call_storage, batch_storage,
+) -> CancelResultItem:
+    """Cancel a single resource (call or batch). Returns a CancelResultItem."""
+
+    resource_id = resource_id.strip()
+
     if resource_id.startswith("batch-"):
         # Batch stop request
         batch_record = await batch_storage.get_batch_by_job_id(resource_id)
         if not batch_record:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Batch not found: {resource_id}"
+            return CancelResultItem(
+                resource_id=resource_id,
+                resource_type="batch",
+                status="not_found",
+                cancelled_count=0,
+                message=f"Batch not found: {resource_id}",
             )
-        
+
         batch_id = batch_record["id"]
         current_status = batch_record.get("status")
-        
-        if current_status in ("stopped", "completed", "cancelled"):
-            return CancelResponse(
+
+        if current_status in ("completed", "cancelled", "failed"):
+            return CancelResultItem(
                 resource_id=resource_id,
                 resource_type="batch",
                 status=current_status,
                 cancelled_count=0,
                 message=f"Batch already in terminal state: {current_status}",
             )
-        
-        # Mark batch as stopped (this will be picked up by process_batch_call loop)
-        await batch_storage.update_batch_status(batch_id, "stopped")
-        
-        # Mark pending entries as cancelled
+
+        # Mark batch as cancelled
+        await batch_storage.update_batch_status(batch_id, "cancelled")
+
+        # Get running/dispatched entries FIRST (before marking them cancelled)
+        running_entries = await batch_storage.get_running_entries_with_call_logs(batch_id)
+
+        # Mark pending/queued entries as cancelled
         cancelled_count = await batch_storage.mark_pending_entries_cancelled(batch_id)
         if cancelled_count > 0:
             await batch_storage.increment_batch_counters(batch_id, cancelled_delta=cancelled_count)
-        
-        # Get running entries
-        running_entries = await batch_storage.get_running_entries_with_call_logs(batch_id)
+
         terminated_count = 0
-        
+
         # If force=true, also terminate running calls
-        if request.force and running_entries:
+        if force and running_entries:
             from api.services.call_service import get_call_service
             call_service = get_call_service()
-            
+
             for entry in running_entries:
                 call_log_id = entry.get("call_log_id")
                 room_name = entry.get("room_name")
-                
+
                 if room_name:
                     terminated = await call_service.terminate_call(room_name)
                     if terminated:
                         terminated_count += 1
-                
-                # Update call and entry status
+
                 if call_log_id:
                     await call_storage.update_call_metadata(call_log_id, status="cancelled")
                 await batch_storage.update_batch_entry_status(
-                    batch_id, entry["entry_index"], "cancelled"
+                    str(entry["id"]), "cancelled"
                 )
-            
+
             if terminated_count > 0:
                 await batch_storage.increment_batch_counters(batch_id, cancelled_delta=terminated_count)
-        
-        message = f"Batch stopped. {cancelled_count} pending entries cancelled."
-        if request.force and terminated_count > 0:
+
+        message = f"Batch cancelled. {cancelled_count} pending entries cancelled."
+        if force and terminated_count > 0:
             message += f" {terminated_count} running call(s) forcefully terminated."
-        elif running_entries and not request.force:
+        elif running_entries and not force:
             message += f" {len(running_entries)} active call(s) will complete naturally. Use force=true to terminate them."
+
+        # Trigger report if any calls completed successfully
+        # On cancellation, we want a report even if not all entries are terminal
+        result = await batch_storage.check_and_complete_batch(batch_id)
+        report_triggered = False
         
-        logger.info(
-            "Batch %s stopped: pending_cancelled=%d, running_terminated=%d, force=%s",
-            resource_id, cancelled_count, terminated_count, request.force
-        )
-        
-        return CancelResponse(
+        if result.get("should_report") or result.get("completed"):
+            # All entries terminal — standard report trigger
+            import asyncio
+            from api.routes.batch import _generate_and_send_batch_report
+            logger.info("Batch %s fully done after cancellation — triggering report", resource_id)
+            asyncio.create_task(_generate_and_send_batch_report(batch_id))
+            report_triggered = True
+        else:
+            # Not all entries terminal, but check if any calls completed
+            batch_record = await batch_storage.get_batch_by_id(batch_id)
+            completed_calls = batch_record.get("completed_calls", 0) if batch_record else 0
+            if completed_calls > 0:
+                import asyncio
+                from api.routes.batch import _generate_and_send_batch_report
+                logger.info(
+                    "Batch %s cancelled with %d completed calls — triggering partial report",
+                    resource_id, completed_calls,
+                )
+                asyncio.create_task(_generate_and_send_batch_report(batch_id))
+                report_triggered = True
+
+        if report_triggered:
+            message += " Report generation triggered."
+
+        return CancelResultItem(
             resource_id=resource_id,
             resource_type="batch",
-            status="stopped",
+            status="cancelled",
             cancelled_count=cancelled_count + terminated_count,
             message=message,
         )
+
     else:
         # Individual call cancel request
         call_record = await call_storage.get_call_by_id(resource_id)
         if not call_record:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Call not found: {resource_id}"
+            return CancelResultItem(
+                resource_id=resource_id,
+                resource_type="call",
+                status="not_found",
+                cancelled_count=0,
+                message=f"Call not found: {resource_id}",
             )
-        
+
         current_status = call_record.get("status")
-        room_name = call_record.get("room_name")
-        
+        call_metadata = call_record.get("metadata") or {}
+        room_name = call_metadata.get("room_name")
+
         terminal_statuses = {
             "ended", "completed", "failed", "declined", "rejected",
-            "not_reachable", "no_answer", "busy", "error", "cancelled"
+            "not_reachable", "no_answer", "busy", "error", "cancelled",
         }
-        
+
         if current_status in terminal_statuses:
-            return CancelResponse(
+            return CancelResultItem(
                 resource_id=resource_id,
                 resource_type="call",
                 status=current_status,
                 cancelled_count=0,
                 message=f"Call already in terminal state: {current_status}",
             )
-        
-        # Forcefully terminate the LiveKit room to end the call
+
         room_deleted = False
         if room_name:
             from api.services.call_service import get_call_service
             call_service = get_call_service()
             room_deleted = await call_service.terminate_call(room_name)
-        
-        # Update call status to cancelled
+
         await call_storage.update_call_metadata(resource_id, status="cancelled")
-        
-        # If part of a batch, update the batch entry
-        batch_id = call_record.get("batch_id")
+
+        batch_id = call_metadata.get("batch_id")
         if batch_id:
             entries = await batch_storage.get_batch_entries(str(batch_id))
             for entry in entries:
-                if entry.get("call_log_id") == resource_id:
+                if str(entry.get("call_log_id")) == resource_id:
                     await batch_storage.update_batch_entry_status(
-                        str(batch_id), entry["entry_index"], "cancelled"
+                        str(entry["id"]), "cancelled"
                     )
                     await batch_storage.increment_batch_counters(str(batch_id), cancelled_delta=1)
                     break
-        
+
         message = "Call cancelled."
         if room_deleted:
             message += " LiveKit room terminated."
         elif room_name:
             message += " Room may have already ended."
-        
+
         logger.info(
             "Call %s cancelled: room=%s, room_deleted=%s, batch_id=%s",
-            resource_id, room_name, room_deleted, batch_id
+            resource_id, room_name, room_deleted, batch_id,
         )
-        
-        return CancelResponse(
+
+        return CancelResultItem(
             resource_id=resource_id,
             resource_type="call",
             status="cancelled",
             cancelled_count=1,
             message=message,
         )
+
+
+@router.post("/cancel", response_model=CancelResponse)
+async def cancel_call_or_batch(request: CancelRequest) -> CancelResponse:
+    """
+    Cancel one or more running calls / batches.
+
+    Accepts a single resource_id (string) or a list of resource_ids.
+    Each resource_id is a call log UUID or a batch job_id (prefixed 'batch-').
+    """
+    # Normalize to list
+    ids = request.resource_id if isinstance(request.resource_id, list) else [request.resource_id]
+
+    call_storage = _get_call_storage()
+    batch_storage = _get_batch_storage()
+
+    results: list[CancelResultItem] = []
+    for rid in ids:
+        result = await _cancel_single_resource(rid, request.force, call_storage, batch_storage)
+        results.append(result)
+
+    total = sum(r.cancelled_count for r in results)
+
+    return CancelResponse(results=results, total_cancelled=total)
 
 # =============================================================================
 # POST /start-call - Trigger single outbound call

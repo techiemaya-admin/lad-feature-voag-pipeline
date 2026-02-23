@@ -67,7 +67,7 @@ class GoogleCredentialResolver:
             record = await self._storage.get_user_by_user_id(clean)
         if not record:
             raise GoogleCredentialError(f"User {clean} not found", status_code=404)
-        # lad_dev.users uses 'id' as the primary key (UUID)
+        # users table uses 'id' as the primary key (UUID)
         canonical = str(record.get("id") or "").strip()
         if not canonical:
             raise GoogleCredentialError(

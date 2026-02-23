@@ -52,3 +52,11 @@ Thumbs.db
 *.zip
 *.tar
 *.tar.gz
+
+# Analysis Output
+analysis/logs/
+analysis/exports/
+analysis/json_exports/
+
+# Tools
+.kiro/

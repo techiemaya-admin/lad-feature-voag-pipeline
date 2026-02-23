@@ -1,9 +1,9 @@
 """
 Database storage for batch call operations.
 
-Updated for lad_dev schema (Phase 12):
-- Table: lad_dev.voice_call_batches (was batch_logs_voiceagent)
-- Table: lad_dev.voice_call_batch_entries (was batch_call_entries_voiceagent)
+Updated for dynamic schema (Phase 12):
+- Table: SCHEMA.voice_call_batches (was batch_logs_voiceagent)
+- Table: SCHEMA.voice_call_batch_entries (was batch_call_entries_voiceagent)
 - Added: tenant_id (required)
 - Changed: agent_id and voice_id are now UUIDs
 - Changed: job_id, base_context, llm_provider/model moved to metadata JSONB
@@ -45,7 +45,7 @@ class BatchStorage:
     """
     Handles database operations for batch call jobs.
     
-    Uses lad_dev schema with:
+    Uses dynamic schema with:
     - tenant_id (required) for multi-tenancy
     - metadata JSONB for job_id, base_context, llm settings
     - lead_id UUID FK on entries (replaces lead_name)

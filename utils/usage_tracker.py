@@ -22,6 +22,9 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
+from db.connection_pool import get_db_connection, return_connection
+from db.schema_constants import BILLING_PRICING_CATALOG_FULL
+
 if TYPE_CHECKING:
     from livekit.agents import AgentSession
 
@@ -334,11 +337,11 @@ async def _fetch_pricing_rates(db_connection) -> list[PricingRate]:
     """Fetch pricing rates from database"""
     try:
         cursor = db_connection.cursor()
-        # Use lad_dev.billing_pricing_catalog table
+        # Use billing_pricing_catalog table
         # Column mappings: category = component, unit_price = cost_per_unit
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT category, provider, model, unit, unit_price
-            FROM lad_dev.billing_pricing_catalog
+            FROM {BILLING_PRICING_CATALOG_FULL}
             WHERE is_active = TRUE
         """)
         rows = cursor.fetchall()

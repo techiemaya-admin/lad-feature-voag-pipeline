@@ -1,8 +1,8 @@
 """
 Lead Storage Module.
 
-Updated for lad_dev schema (Phase 12):
-- Table: lad_dev.leads
+Updated for dynamic schema (Phase 12):
+- Table: leads
 - ID is UUID (not bigint)
 - Uses first_name/last_name instead of name
 - Uses phone instead of lead_number
@@ -38,7 +38,7 @@ FULL_TABLE = f"{SCHEMA}.{TABLE}"
 
 class LeadStorage:
     """
-    Manages lead data in lad_dev.leads table.
+    Manages lead data in leads table.
     
     Key schema changes from old leads_voiceagent:
     - id: UUID (was bigint)
