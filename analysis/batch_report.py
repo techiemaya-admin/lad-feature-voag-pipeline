@@ -1193,7 +1193,7 @@ def _get_email_method(tenant_id: Optional[str] = None) -> str:
             conn = _get_connection()
             try:
                 with conn.cursor() as cur:
-                    cur.execute("""
+                    cur.execute(f"""
                         SELECT config
                         FROM {SCHEMA}.tenant_features
                         WHERE tenant_id = %s

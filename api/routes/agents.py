@@ -19,7 +19,7 @@ from db.storage import AgentStorage
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/agents", tags=["agents"])
+router = APIRouter(prefix="/agents")
 
 # Lazy initialization
 _agent_storage: AgentStorage | None = None

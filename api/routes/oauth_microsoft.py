@@ -28,7 +28,7 @@ from db.connection_pool import get_db_connection
 logger = logging.getLogger(__name__)
 
 # Initialize shared components
-microsoft_router = APIRouter(prefix="/auth/microsoft", tags=["Microsoft OAuth"])
+microsoft_router = APIRouter(prefix="/auth/microsoft")
 
 # Lazy initialization of services
 _ms_service: MicrosoftAuthService | None = None

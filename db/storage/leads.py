@@ -412,24 +412,22 @@ class LeadStorage:
             if existing_lead:
                 logger.info(f"Using existing lead: id={existing_lead['id']}, phone={phone_number}")
                 
-                # Update name if missing
-                has_name = bool(existing_lead.get('first_name') or existing_lead.get('last_name'))
-                if (name or first_name) and not has_name:
-                    fn = first_name
-                    ln = last_name
-                    if not fn and name:
-                        fn, ln = self._split_name(name)
-                    
-                    if fn:
-                        updated = await self._set_name_if_missing(
-                            existing_lead['id'],
-                            first_name=fn,
-                            last_name=ln
-                        )
-                        if updated:
+                # Update name if request provides a meaningful name that differs from DB
+                fn = first_name
+                ln = last_name
+                if not fn and name:
+                    fn, ln = self._split_name(name)
+                
+                if fn and fn.strip():
+                    db_name = self._combine_name(existing_lead.get('first_name'), existing_lead.get('last_name'))
+                    req_name = self._combine_name(fn, ln)
+                    if req_name != db_name:
+                        ok = await self.update_lead_info(existing_lead['id'], first_name=fn, last_name=ln)
+                        if ok:
                             existing_lead['first_name'] = fn
                             existing_lead['last_name'] = ln
-                            existing_lead['name'] = self._combine_name(fn, ln)
+                            existing_lead['name'] = req_name
+                            logger.info(f"Updated lead name: '{db_name}' -> '{req_name}' (id={existing_lead['id']})")
                 
                 return existing_lead
             

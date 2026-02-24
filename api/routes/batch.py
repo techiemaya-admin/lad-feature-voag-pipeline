@@ -46,7 +46,7 @@ from db.schema_constants import USERS_FULL
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/batch", tags=["batch"])
+router = APIRouter(prefix="/batch")
 
 # Lazy initialization
 _batch_storage: BatchStorage | None = None

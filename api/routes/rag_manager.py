@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
-router = APIRouter(prefix="/rag", tags=["RAG Management"])
+router = APIRouter(prefix="/rag")
 
 
 @router.get("/manage", response_class=HTMLResponse)

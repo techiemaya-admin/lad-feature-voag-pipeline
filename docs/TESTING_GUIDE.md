@@ -99,6 +99,10 @@ export USER_ID="9ef0f23e-1129-49d4-a79f-4b3f13225f48"
 # stage
 export USER_ID="20bc2e61-cd1a-4801-87b6-2e125303474f"
 export USER_ID="b838f172-4046-40fa-83bd-26adda05988d"
+
+#prod
+export USER_ID="9ef0f23e-1129-49d4-a79f-4b3f13225f48"
+
 # Common headers
 export HEADERS="-H 'Content-Type: application/json' -H 'X-Frontend-ID: $FRONTEND_ID' -H 'X-API-Key: $API_KEY'"
 ```

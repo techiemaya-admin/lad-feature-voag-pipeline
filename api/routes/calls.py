@@ -45,7 +45,7 @@ from utils.call_routing import validate_and_format_call
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/calls", tags=["calls"])
+router = APIRouter(prefix="/calls")
 
 # Lazy-initialized storage instances
 _call_storage: CallStorage | None = None

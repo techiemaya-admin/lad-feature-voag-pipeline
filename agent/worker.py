@@ -961,7 +961,6 @@ async def entrypoint(ctx: agents.JobContext):
                 await sess.generate_reply(
                     instructions="The user has been silent for a while. "
                     "Ask if they are still there and if they need any help. "
-                    "Keep it brief and friendly."
                 )
             except Exception as e:
                 logger.warning(f"Failed to send silence warning prompt: {e}")

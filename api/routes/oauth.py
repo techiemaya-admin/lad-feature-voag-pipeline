@@ -30,7 +30,7 @@ from utils.google_oauth import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/auth", tags=["oauth"])
+router = APIRouter(prefix="/auth")
 
 # Lazy initialization of services
 _oauth_settings: GoogleOAuthSettings | None = None

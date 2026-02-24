@@ -17,12 +17,14 @@ Usage:
 """
 
 import os
+import json
 import logging
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 
 # Load environment variables with explicit path (works when run from any directory)
 _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -142,6 +144,42 @@ async def readyz():
 # =============================================================================
 # ERROR HANDLERS
 # =============================================================================
+
+def _debug_body_for_log(body: dict | None, path: str) -> str:
+    """Return body suitable for debug log; truncate batch entries to 2."""
+    if not body:
+        return "null"
+    if "entries" in body and path.startswith("/batch/") and isinstance(body["entries"], list):
+        truncated = {**body, "entries": body["entries"][:2]}
+        if len(body["entries"]) > 2:
+            truncated["entries"].append("...")
+        return json.dumps(truncated, default=str)
+    return json.dumps(body, default=str)
+
+
+async def _read_body_safe(request: Request) -> dict | None:
+    try:
+        return await request.json()
+    except Exception:
+        return None
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    fid = request.headers.get("X-Frontend-ID") or "null"
+    body = _debug_body_for_log(exc.body if isinstance(exc.body, dict) else None, request.url.path)
+    logger.debug("[INVALID_BODY] %s %s | frontend_id=%s | body=%s", request.method, request.url.path, fid, body)
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    if exc.status_code == 400:
+        fid = request.headers.get("X-Frontend-ID") or "null"
+        body = _debug_body_for_log(await _read_body_safe(request), request.url.path)
+        logger.debug("[BAD_REQUEST] %s %s | frontend_id=%s | body=%s", request.method, request.url.path, fid, body)
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=getattr(exc, "headers", None))
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):

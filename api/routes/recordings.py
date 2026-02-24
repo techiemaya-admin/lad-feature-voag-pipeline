@@ -25,7 +25,7 @@ from utils.signed_url_cache import SignedUrlCache
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/recordings", tags=["recordings"])
+router = APIRouter(prefix="/recordings")
 
 # Constants
 CALL_RECORDING_SIGNED_URL_TTL_HOURS = 96  # 4 days

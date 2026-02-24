@@ -12,6 +12,7 @@ import os
 import time
 import logging
 import hashlib
+import base64
 from dataclasses import dataclass, field
 from collections import defaultdict
 from typing import Any, Callable, Mapping
@@ -129,6 +130,15 @@ AUTH_EXEMPT_ENDPOINTS: frozenset[str] = frozenset({
     "/auth/microsoft/logo",  # Logo asset for booking wizard
     "/batch/entry-completed",  # Internal worker callback (not public)
     "/rag/manage",  # RAG management UI (has its own login)
+})
+
+# Documentation endpoints - protected via HTTP Basic Auth (browser login popup)
+# Username = X-Frontend-ID, Password = X-API-Key
+DOCS_ENDPOINTS: frozenset[str] = frozenset({
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/docs/oauth2-redirect",  # Swagger OAuth redirect
 })
 
 # Static file prefixes to skip entirely
@@ -336,6 +346,29 @@ def _get_client_identifier(request: Request, frontend_id: str | None) -> str:
 
 
 # =============================================================================
+# HTTP Basic Auth for Documentation Pages
+# =============================================================================
+
+def _extract_basic_auth(request: Request) -> tuple[str | None, str | None]:
+    """
+    Extract username and password from HTTP Basic Auth header.
+    
+    Returns:
+        (username, password) or (None, None) if not present or invalid
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Basic "):
+        return None, None
+    
+    try:
+        decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
+        username, _, password = decoded.partition(":")
+        return username or None, password or None
+    except Exception:
+        return None, None
+
+
+# =============================================================================
 # FastAPI Middleware
 # =============================================================================
 
@@ -343,9 +376,10 @@ class APISecurityMiddleware(BaseHTTPMiddleware):
     """
     Middleware that enforces frontend authentication and rate limiting.
     
-    Headers required:
-    - X-Frontend-ID: Identifier for the calling frontend
-    - X-API-Key: Secret key for the frontend
+    Authentication methods:
+    - API endpoints: X-Frontend-ID + X-API-Key headers
+    - Documentation (/docs, /redoc, /openapi.json): HTTP Basic Auth
+      (username = Frontend-ID, password = API-Key)
     """
     
     async def dispatch(self, request: Request, call_next: Callable) -> Any:
@@ -355,9 +389,33 @@ class APISecurityMiddleware(BaseHTTPMiddleware):
         if any(path.startswith(prefix) for prefix in SKIP_PREFIXES):
             return await call_next(request)
         
-        # Get client identifier for rate limiting
+        # ── Documentation endpoints: HTTP Basic Auth (browser login popup) ──
+        if path in DOCS_ENDPOINTS and is_security_enabled():
+            basic_user, basic_pass = _extract_basic_auth(request)
+            valid, error = validate_frontend_credentials(basic_user, basic_pass)
+            if not valid:
+                # Return 401 with Basic realm → browser shows login dialog
+                return JSONResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content={"detail": "Authentication required to view API documentation."},
+                    headers={"WWW-Authenticate": 'Basic realm="API Documentation", charset="UTF-8"'},
+                )
+            # Credentials valid, allow through
+            return await call_next(request)
+        
+        # ── Standard API endpoints: X-Frontend-ID + X-API-Key headers ──
+        # Also accept HTTP Basic Auth as fallback (browser sends cached
+        # credentials from docs login, making Swagger "Try it out" work)
         frontend_id = request.headers.get("X-Frontend-ID")
         api_key = request.headers.get("X-API-Key")
+        
+        # Fallback: if custom headers missing, try Basic Auth credentials
+        if not frontend_id or not api_key:
+            basic_user, basic_pass = _extract_basic_auth(request)
+            if basic_user and basic_pass:
+                frontend_id = frontend_id or basic_user
+                api_key = api_key or basic_pass
+        
         client_id = _get_client_identifier(request, frontend_id)
         
         # Check if endpoint requires authentication
@@ -367,15 +425,9 @@ class APISecurityMiddleware(BaseHTTPMiddleware):
         if requires_auth and is_security_enabled():
             valid, error = validate_frontend_credentials(frontend_id, api_key)
             if not valid:
-                # Log full details of invalid request at DEBUG level
-                client_ip = request.client.host if request.client else "unknown"
                 logger.debug(
-                    f"[SECURITY] Invalid request - IP: {client_ip}, "
-                    f"Path: {request.method} {path}, "
-                    f"Frontend-ID: {frontend_id or 'missing'}, "
-                    f"API-Key: {'present' if api_key else 'missing'}, "
-                    f"Headers: {dict(request.headers)}, "
-                    f"Error: {error}"
+                    "[SECURITY] Auth failed: %s %s | frontend_id=%s | %s",
+                    request.method, path, frontend_id or "null", error,
                 )
                 # Record malformed/invalid request
                 should_block, block_msg = _rate_limiter.record_malformed_request(client_id)

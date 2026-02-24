@@ -686,7 +686,7 @@ class SilenceConfig:
     #   - Active conversations: 10 - 15
     #   - Forms/data entry: 20 - 30
     #   - Patient waiting: 30 - 45
-    silence_warning_seconds: float = 35.0
+    silence_warning_seconds: float = 20.0
 
     # -------------------------------------------------------------------------
     # silence_timeout_seconds (seconds)
@@ -697,7 +697,7 @@ class SilenceConfig:
     # Default: 35
     #
     # Note: Should be > silence_warning_seconds
-    silence_timeout_seconds: float = 45.0
+    silence_timeout_seconds: float = 35.0
 
 
 # =============================================================================

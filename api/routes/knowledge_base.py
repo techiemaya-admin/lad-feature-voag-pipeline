@@ -25,7 +25,7 @@ from utils.kb_cache import kb_cache
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/knowledge-base", tags=["knowledge-base"])
+router = APIRouter(prefix="/knowledge-base")
 
 # =============================================================================
 # GEMINI FILE SEARCH STORAGE LIMITS

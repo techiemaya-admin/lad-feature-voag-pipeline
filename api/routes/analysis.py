@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/analysis", tags=["analysis"])
+router = APIRouter(prefix="/analysis")
 
 # Thread pool for running analysis without blocking the event loop
 # This allows the endpoint to return immediately while analysis runs in background
