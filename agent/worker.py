@@ -650,6 +650,8 @@ async def entrypoint(ctx: agents.JobContext):
     entry_id: str | None = None  # Batch entry tracking
     is_realtime: bool = False  # Realtime model mode (Ultravox, etc.)
     realtime_provider: str | None = None  # Realtime provider name
+    carrier_name: str | None = None  # Carrier name from routing
+    trunk_resolution: str | None = None  # "database" or "environment"
     
     try:
         if ctx.job.metadata:
@@ -665,6 +667,8 @@ async def entrypoint(ctx: agents.JobContext):
             outbound_trunk_id = dial_info.get("outbound_trunk_id")
             batch_id = dial_info.get("batch_id")  # For batch completion tracking
             entry_id = dial_info.get("entry_id")  # For batch entry status update
+            carrier_name = dial_info.get("carrier_name")
+            trunk_resolution = dial_info.get("trunk_resolution")
             
             raw_agent_id = dial_info.get("agent_id")
             if isinstance(raw_agent_id, (int, str)):
@@ -875,6 +879,23 @@ async def entrypoint(ctx: agents.JobContext):
     # Create audit trail for tool usage tracking
     from utils.audit_trail import ToolAuditTrail
     audit_trail = ToolAuditTrail(tenant_id=tenant_id)
+    
+    # Create SIP trail for call lifecycle diagnostics
+    from utils.sip_trail import SipTrailLogger
+    sip_trail = SipTrailLogger()
+    sip_trail.set_config(trunk_resolution=trunk_resolution, carrier_name=carrier_name)
+    
+    # Save worker_info to metadata early (so we know which worker picked up)
+    if call_log_id:
+        try:
+            worker_info = {
+                "worker_name": os.getenv("VOICE_AGENT_NAME", "inbound-agent"),
+                "livekit_url": os.getenv("LIVEKIT_URL", "unknown"),
+                "picked_up_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }
+            await call_storage.update_call_metadata(call_log_id, metadata={"worker_info": worker_info})
+        except Exception as e:
+            logger.warning(f"Failed to save worker_info: {e}")
     
     tool_list = await attach_tools(
         None,  # Agent not needed here, just building tools
@@ -1151,6 +1172,7 @@ async def entrypoint(ctx: agents.JobContext):
         batch_id=batch_id,  # For batch completion tracking
         entry_id=entry_id,  # For batch entry status update
         audit_trail=audit_trail,  # Tool usage audit trail
+        sip_trail=sip_trail,  # SIP lifecycle trail
         from_number=from_number,  # For provider-based telephony costing
     )
     
@@ -1345,7 +1367,10 @@ async def entrypoint(ctx: agents.JobContext):
                         )
                         logger.info(f"Call {call_log_id} status updated to ringing")
                     
-                    await ctx.api.sip.create_sip_participant(
+                    # Log SIP dial start
+                    sip_trail.log_sip_dial_started(trunk_id, phone_number)
+                    
+                    sip_result = await ctx.api.sip.create_sip_participant(
                         api.CreateSIPParticipantRequest(
                             room_name=ctx.room.name,
                             sip_trunk_id=trunk_id,
@@ -1355,6 +1380,13 @@ async def entrypoint(ctx: agents.JobContext):
                             krisp_enabled=True,
                         )
                     )
+                    
+                    # Log SIP answered + capture call_sid from response
+                    call_sid = None
+                    if sip_result and hasattr(sip_result, 'sip_call_id'):
+                        call_sid = sip_result.sip_call_id
+                    sip_trail.log_sip_answered(call_sid=call_sid)
+                    
                     # Call is now answered - update status to ongoing
                     if call_log_id:
                         await call_storage.update_call_status(
@@ -1392,7 +1424,23 @@ async def entrypoint(ctx: agents.JobContext):
                         logger.error(f"Failed to send greeting (session may have crashed): {e}")
                         
                 except api.TwirpError as e:
-                    logger.error(f"SIP dial error: {e.message}")
+                    # Extract SIP status details from TwirpError metadata
+                    sip_status_code = None
+                    sip_status = None
+                    if hasattr(e, 'metadata') and e.metadata:
+                        raw_code = e.metadata.get('sip_status_code')
+                        sip_status_code = int(raw_code) if raw_code else None
+                        sip_status = e.metadata.get('sip_status')
+                    
+                    sip_trail.log_sip_failed(
+                        error_message=e.message,
+                        sip_status_code=sip_status_code,
+                        sip_status=sip_status,
+                    )
+                    logger.error(
+                        "SIP dial error: %s (sip_status=%s %s)",
+                        e.message, sip_status_code, sip_status
+                    )
                     if call_log_id:
                         await call_storage.update_call_status(
                             call_log_id=call_log_id,

@@ -58,6 +58,7 @@ class CleanupContext:
         batch_id: str | None = None,  # Batch call tracking
         entry_id: str | None = None,  # Batch entry tracking
         audit_trail: Any = None,  # Tool audit trail for metadata
+        sip_trail: Any = None,  # SIP lifecycle trail for metadata
         from_number: str | None = None,  # For provider-based telephony costing
     ):
         self.call_recorder = call_recorder
@@ -76,6 +77,7 @@ class CleanupContext:
         self.batch_id = batch_id
         self.entry_id = entry_id
         self.audit_trail = audit_trail
+        self.sip_trail = sip_trail
         self.from_number = from_number
 
 
@@ -191,22 +193,24 @@ async def save_recording_to_db(
 
 async def save_audit_trail(ctx: CleanupContext) -> None:
     """
-    Save tool audit trail to metadata JSONB (non-blocking).
+    Save audit trail, SIP trail, and status_reason to metadata JSONB.
     
-    Merges audit_trail into existing metadata without overwriting other fields.
+    Merges all trail data into existing metadata in a single DB write.
     Errors are logged but don't break the cleanup flow.
     
     Args:
-        ctx: Cleanup context with audit_trail
+        ctx: Cleanup context with audit_trail and sip_trail
     """
-    if not ctx.audit_trail or not ctx.call_log_id or not ctx.call_storage:
+    if not ctx.call_log_id or not ctx.call_storage:
+        return
+    if not ctx.audit_trail and not ctx.sip_trail:
         return
     
     try:
         # Get existing call data to merge metadata
         call = await ctx.call_storage.get_call_by_id(ctx.call_log_id)
         if not call:
-            logger.warning("Cannot save audit trail - call not found: %s", ctx.call_log_id)
+            logger.warning("Cannot save trails - call not found: %s", ctx.call_log_id)
             return
         
         # Get existing metadata or empty dict
@@ -218,23 +222,42 @@ async def save_audit_trail(ctx: CleanupContext) -> None:
             except json.JSONDecodeError:
                 existing_metadata = {}
         
-        # Merge audit_trail into metadata
-        existing_metadata["audit_trail"] = ctx.audit_trail.to_dict()
+        # 1. Merge audit_trail
+        if ctx.audit_trail:
+            existing_metadata["audit_trail"] = ctx.audit_trail.to_dict()
         
-        # Update metadata
+        # 2. Merge sip_trail
+        if ctx.sip_trail:
+            sip_data = ctx.sip_trail.to_dict()
+            if sip_data:
+                existing_metadata["sip_trail"] = sip_data
+        
+        # 3. Resolve and set status_reason
+        from utils.sip_trail import resolve_status_reason
+        existing_status = call.get("status")
+        status_reason = resolve_status_reason(
+            audit_trail=ctx.audit_trail,
+            sip_trail=ctx.sip_trail,
+            existing_status=existing_status,
+        )
+        existing_metadata["status_reason"] = status_reason
+        
+        # Update metadata (single write)
         await ctx.call_storage.update_call_metadata(
             ctx.call_log_id,
             metadata=existing_metadata
         )
+        
+        audit_count = len(ctx.audit_trail.events) if ctx.audit_trail else 0
+        sip_count = len(ctx.sip_trail.events) if ctx.sip_trail else 0
         logger.info(
-            "Audit trail saved: call_log_id=%s, events=%d",
-            ctx.call_log_id,
-            len(ctx.audit_trail.events)
+            "Trails saved: call_log_id=%s, audit_events=%d, sip_events=%d, status_reason=%s",
+            ctx.call_log_id, audit_count, sip_count, status_reason
         )
     except Exception as exc:
         # Non-blocking - log error but don't raise
         logger.error(
-            "Failed to save audit trail for call_log_id=%s: %s",
+            "Failed to save trails for call_log_id=%s: %s",
             ctx.call_log_id,
             exc,
             exc_info=True

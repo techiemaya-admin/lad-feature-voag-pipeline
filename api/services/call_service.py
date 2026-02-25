@@ -791,6 +791,11 @@ class CallService:
             if outbound_trunk:
                 metadata["outbound_trunk_id"] = outbound_trunk
             
+            # SIP trail diagnostics - so worker knows where creds came from
+            if routing_result.carrier_name:
+                metadata["carrier_name"] = routing_result.carrier_name
+            metadata["trunk_resolution"] = livekit_creds.source  # "database" or "environment"
+            
             # Batch call tracking - worker uses these to update entry status on completion
             if batch_id:
                 metadata["batch_id"] = batch_id
